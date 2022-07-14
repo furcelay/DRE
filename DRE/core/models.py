@@ -32,6 +32,10 @@ class ModelsCube:
         numpy array with the angle axis
     ax_ratio : ndarray
         numpy array with the ax_ratio axis
+    n_params: int
+        number of free parameters
+    noise_correlation : float
+        correction factor for the noise correlation due to the convolution with the PSF, corr~SUM(PSF²)
     compression : dict
         dictionary with arguments for H5Py compression
 
@@ -78,6 +82,9 @@ class ModelsCube:
         self.ax_ratio = None
         self.x_image = None
         self.y_image = None
+        self.n_params = None
+
+        self.noise_correlation = 1.
 
         self.compression = compression_types[out_compression]
 
@@ -132,9 +139,11 @@ class ModelsCube:
 
         cube = fits.getdata(models_file).astype('float')
         self.original_shape = cube.shape
+
         if "NINDEX" in self.header:
             cube = cube.reshape(self.header["NINDEX"], self.header["NAXRAT"], self.header["NPOSANG"],
                                 self.header["BOXSIZE"], self.header["NLOGH"], self.header["BOXSIZE"])
+            self.n_params = 3
         else:
             # the old cube without Sérsic index
             cube = cube.reshape(1, self.header["NAXRAT"], self.header["NPOSANG"],
@@ -142,6 +151,8 @@ class ModelsCube:
             self.header["INDEX0"] = 4.0
             self.header["NINDEX"] = 1
             self.header["DINDEX"] = 0
+            self.n_params = 3
+
         # swap log_r and x_image
         cube = cube.swapaxes(-2, -3)
         self.models = cube
@@ -190,8 +201,9 @@ class ModelsCube:
             for j in range(self.convolved_models.shape[1]):
                 self.convolved_models[i, j] = fftconvolve(self.models[i, j], psf[np.newaxis, np.newaxis],
                                                           mode='same', axes=(-2, -1))
+        self.noise_correlation = np.sum(psf**2)
 
-    def dre_fit(self, data, segment, noise, backend=numpy):
+    def dre_fit(self, data, segment, noise, exp_time=1., noise_correlation=1., backend=numpy):
         """
         performs the fit with this steps:
             - masks the models, the data and the noise with the segment,
@@ -211,6 +223,10 @@ class ModelsCube:
             numpy/cupy array corresponding to a segmentation image cut
         noise : ndarray
             numpy/cupy array corresponding to a background RMS image cut
+        exp_time : float
+            exposure time of the image to correct the noise of the model
+        noise_correlation : float
+            correction factor for the noise correlation due to the convolution with the PSF, corr~SUM(PSF²)
 
 
         Returns
@@ -229,7 +245,7 @@ class ModelsCube:
         flux_data = backend.nansum(data, axis=-1)
         scale = flux_data / flux_models
         models = scale[..., backend.newaxis] * models
-        chi = (data - models) ** 2 / (models + noise ** 2)
+        chi = (data - models) ** 2 / (models * noise_correlation / exp_time + noise ** 2)
 
         return backend.nanmean(chi, axis=-1)
 
@@ -295,7 +311,7 @@ class ModelsCube:
         parameters['LOGR_CHI'], parameters['LOGR_VAR'], parameters['LOGR_CHI_VAR'] = self.pond_rad_3d(chi_cube,
                                                                                                       self.log_r[r])
 
-        parameters['LOGR_PARAB'], parameters['LOGR_STD'] = fit_parabola_1d(np.log(chi_cube),
+        parameters['LOGR_PARAB'], parameters['LOGR_STD'] = fit_parabola_1d(-chi_cube,
                                                                            parameters['MODEL_IDX'],
                                                                            self.log_r)
 
@@ -326,7 +342,7 @@ class ModelsCube:
         """
 
         if psf_file is None:
-            model = self.convolved_models[model_index]
+            model = self.to_cpu(self.convolved_models[model_index])
         else:
             psf = get_psf(psf_file)
             model = self.to_cpu(self.models[model_index])
