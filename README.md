@@ -49,11 +49,15 @@ For the preprocessing and to obtain the PSF:
 
 ## Installation
 
-First clone this repo:
+To install directly with pip:
+```
+pip install git+https://github.com/Cnmoya/DRE
+```
+To make modifications in the code before the installation first clone this repo:
 ```
 git clone https://github.com/Cnmoya/DRE.git
 ```
-You can make any modification at this point. To install it:
+you can make any modification at this point, to install it:
 ```
 pip install --use-feature=in-tree-build ./DRE
 ```

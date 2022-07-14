@@ -12,7 +12,7 @@ from DRE.misc.read_catalog import cat_to_table
 
 class Cutter:
 
-    def __init__(self, margin=80, max_stellarity=0.5, filters=None, centroids=False, centroids_mode='com',
+    def __init__(self, margin=80, max_stellarity=1.0, filters=None, centroids=False, centroids_mode='com',
                  compression='none', image_size=128):
 
         self.margin = margin
@@ -31,7 +31,10 @@ class Cutter:
         conditions = []
         inside_x = self.margin < _row['X_IMAGE'] < header['NAXIS1'] - self.margin
         inside_y = self.margin < _row["Y_IMAGE"] < header['NAXIS2'] - self.margin
-        is_galaxy = _row['CLASS_STAR'] < self.max_stellarity
+        if self.max_stellarity >= 1:
+            is_galaxy = True
+        else:
+            is_galaxy = _row['CLASS_STAR'] < self.max_stellarity
         conditions.extend([inside_x, inside_y, is_galaxy])
         for param, _min, _max in self.extra_filters:
             new_condition = float(_min) < _row[param] < float(_max)
@@ -61,41 +64,44 @@ class Cutter:
         mask = binary_dilation(mask, iterations=dilation)
         return mask
 
-    def cut_image(self, cat, out_name, seg, obj, data, noise, progress_status):
+    def cut_image(self, cat, out_name, seg, obj, noise, progress_status):
         cut = 0
         with File(out_name, 'w') as h5_file:
             for j, row in enumerate(cat):
                 ext_number = row['EXT_NUMBER'] if 'EXT_NUMBER' in row.keys() else 0
-                if self.condition(row, data[ext_number].header):
+                if self.condition(row, obj[ext_number].header):
                     # filters the data that contains nan's
-                    data_cut = self.cut_object(data, row, ext_number)
-                    if not np.isnan(np.sum(data_cut)):
-                        # cortes
-                        obj_cut = self.cut_object(obj, row, ext_number)
-                        seg_cut = self.cut_object(seg, row, ext_number)
-                        rms_cut = self.cut_object(noise, row, ext_number)
 
-                        # mask
-                        seg_cut = self.clean_mask(seg_cut == row["NUMBER"])
+                    # cuts
+                    obj_cut = self.cut_object(obj, row, ext_number)
+                    seg_cut = self.cut_object(seg, row, ext_number)
+                    rms_cut = self.cut_object(noise, row, ext_number)
 
-                        # centroid + shift
-                        if self.centroids:
-                            x_shift, y_shift = (self.image_size - 1)/2 - self.centroid_func(obj_cut, mask=~seg_cut)
-                            obj_cut = shift(obj_cut, (y_shift, x_shift))
-                            # order 0 for segment as is binary
-                            seg_cut = shift(seg_cut, (y_shift, x_shift), order=0)
-                            rms_cut = shift(rms_cut, (y_shift, x_shift))
+                    # SExtractor hides nan's as -1e30, skip cuts with nan's
+                    if np.isclose(obj_cut, -1e30).any():
+                        continue
 
-                        h5_group = h5_file.create_group(f"{ext_number:02d}_{row['NUMBER']:04d}")
-                        h5_group.create_dataset('obj', data=obj_cut,
-                                                dtype='float32', **self.compression)
-                        h5_group.create_dataset('seg', data=seg_cut,
-                                                dtype='bool', **self.compression)
-                        h5_group.create_dataset('rms', data=rms_cut,
-                                                dtype='float32', **self.compression)
+                    # mask
+                    seg_cut = self.clean_mask(np.equal(seg_cut, row["NUMBER"]))
 
-                        progress(j + 1, len(cat), progress_status)
-                        cut += 1
+                    # centroid + shift
+                    if self.centroids:
+                        x_shift, y_shift = (self.image_size - 1)/2 - self.centroid_func(obj_cut, mask=~seg_cut)
+                        obj_cut = shift(obj_cut, (y_shift, x_shift))
+                        # order 0 for segment as is binary
+                        seg_cut = shift(seg_cut, (y_shift, x_shift), order=0)
+                        rms_cut = shift(rms_cut, (y_shift, x_shift))
+
+                    h5_group = h5_file.create_group(f"{ext_number:02d}_{row['NUMBER']:04d}")
+                    h5_group.create_dataset('obj', data=obj_cut,
+                                            dtype='float32', **self.compression)
+                    h5_group.create_dataset('seg', data=seg_cut,
+                                            dtype='bool', **self.compression)
+                    h5_group.create_dataset('rms', data=rms_cut,
+                                            dtype='float32', **self.compression)
+
+                    progress(j + 1, len(cat), progress_status)
+                    cut += 1
         print(f"\n{progress_status}: {cut} cuts")
 
     def cut_tiles(self, tiles='Tiles', sextracted='Sextracted', catalogs=None, output='Cuts'):
@@ -112,7 +118,6 @@ class Cutter:
             seg = fits.open(f"{basename}_seg.fits")
             obj = fits.open(f"{basename}_nb.fits")
             noise = fits.open(f"{basename}_rms.fits")
-            data = fits.open(os.path.join(tiles, f"{name}.fits"))
             if catalogs is None:
                 cat = cat_to_table(f"{basename}_cat.fits")
             else:
@@ -124,9 +129,8 @@ class Cutter:
             progress_status = f"({i + 1}/{len(files)})"
             print(f"{progress_status}: {name}")
             self.cut_image(cat, out_name,
-                           seg, obj, data, noise,
+                           seg, obj, noise,
                            progress_status)
             seg.close()
             obj.close()
             noise.close()
-            data.close()

@@ -34,7 +34,7 @@ class ModelGPU(ModelsCube):
 
     def fit_file(self, input_file, output_file, psf, convolve=True, progress_status=''):
         if convolve:
-            self.convolve(cp.array(get_psf(psf)))
+            self.convolve(get_psf(psf, backend=cupy))
         with File(input_file, 'r') as input_h5f:
             names = list(input_h5f.keys())
         for name in tqdm(names, desc=progress_status, mininterval=0.5):
@@ -67,7 +67,7 @@ class ModelGPU(ModelsCube):
                         psf=None, figsize=(20, 15), vmin=0, vmax=100, cmap='gray'):
         plt.figure(figsize=figsize)
         if psf is not None:
-            self.convolve(cp.array(get_psf(psf)))
+            self.convolve(get_psf(psf, backend=cupy))
         else:
             self.convolved_models = self.models.copy()
         models_slice = self.convolved_models[src_index_idx, ax_ratio_idx].swapaxes(-2, -3)

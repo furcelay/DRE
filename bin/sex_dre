@@ -100,7 +100,7 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description='Wrapper for running SExtractor with DRE parameters')
 
         parser.add_argument('-i', "--input", help="directory with input images for SExtractor "
-                                                  "can be uno directory for single mode or two for dual mode. "
+                                                  "can be une directory for single mode or two for dual mode. "
                                                   "In dual mode the images in each filter need to start with "
                                                   "the same identifier followed by a separator (def: Tiles)",
                             default="Tiles", type=str, nargs='+')

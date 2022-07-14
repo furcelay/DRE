@@ -1,6 +1,7 @@
 import numpy as np
 from h5py import File
 from astropy.table import QTable, join, vstack
+from astropy.units import Quantity
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from astropy.visualization import quantity_support
@@ -28,6 +29,10 @@ class Result:
         return self.table.__getitem__(key)
 
     def __setitem__(self, key, value):
+        value = np.asarray(value)
+        if value.ndim == 0:
+            value = np.ones(len(self)) * value
+        self.table[key] = Quantity(value)
         self.update = True
         return self.table.__setitem__(key, value)
 
