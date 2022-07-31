@@ -203,7 +203,7 @@ class ModelsCube:
                                                           mode='same', axes=(-2, -1))
         self.noise_correlation = np.sum(psf**2)
 
-    def dre_fit(self, data, segment, noise, exp_time=1., noise_correlation=1., backend=numpy):
+    def dre_fit(self, data, segment, noise, exp_time=1., backend=numpy):
         """
         performs the fit with this steps:
             - masks the models, the data and the noise with the segment,
@@ -225,8 +225,6 @@ class ModelsCube:
             numpy/cupy array corresponding to a background RMS image cut
         exp_time : float
             exposure time of the image to correct the noise of the model
-        noise_correlation : float
-            correction factor for the noise correlation due to the convolution with the PSF, corr~SUM(PSF²)
 
 
         Returns
@@ -245,7 +243,7 @@ class ModelsCube:
         flux_data = backend.nansum(data, axis=-1)
         scale = flux_data / flux_models
         models = scale[..., backend.newaxis] * models
-        chi = (data - models) ** 2 / (models * noise_correlation / exp_time + noise ** 2)
+        chi = (data - models) ** 2 / (models * self.noise_correlation / exp_time + noise ** 2)
 
         return backend.nanmean(chi, axis=-1)
 
@@ -311,7 +309,7 @@ class ModelsCube:
         parameters['LOGR_CHI'], parameters['LOGR_VAR'], parameters['LOGR_CHI_VAR'] = self.pond_rad_3d(chi_cube,
                                                                                                       self.log_r[r])
 
-        parameters['LOGR_PARAB'], parameters['LOGR_STD'] = fit_parabola_1d(-chi_cube,
+        parameters['LOGR_PARAB'], parameters['LOGR_STD'] = fit_parabola_1d(chi_cube,
                                                                            parameters['MODEL_IDX'],
                                                                            self.log_r)
 
